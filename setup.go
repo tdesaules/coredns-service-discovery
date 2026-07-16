@@ -24,24 +24,18 @@ func setup(c *caddy.Controller) error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
+	var wg *sync.WaitGroup
 
 	c.OnStartup(func() error {
-		for _, src := range sources {
-			wg.Add(1)
-			go func(s Source) {
-				defer wg.Done()
-				if err := s.Run(ctx, h.Store); err != nil {
-					log.Errorf("source %s: %v", s.Name(), err)
-				}
-			}(src)
-		}
+		wg = startSources(ctx, h.Store, sources)
 		return nil
 	})
 
 	c.OnShutdown(func() error {
 		cancel()
-		wg.Wait()
+		if wg != nil {
+			wg.Wait()
+		}
 		return nil
 	})
 
@@ -51,6 +45,22 @@ func setup(c *caddy.Controller) error {
 	})
 
 	return nil
+}
+
+// startSources launches a goroutine for each source and returns a WaitGroup
+// that completes when all sources have stopped.
+func startSources(ctx context.Context, store *Store, sources []Source) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	for _, src := range sources {
+		wg.Add(1)
+		go func(s Source) {
+			defer wg.Done()
+			if err := s.Run(ctx, store); err != nil {
+				log.Errorf("source %s: %v", s.Name(), err)
+			}
+		}(src)
+	}
+	return &wg
 }
 
 func parseConfig(c *caddy.Controller) (*Handler, []Source, error) {
@@ -86,7 +96,7 @@ func parseConfig(c *caddy.Controller) (*Handler, []Source, error) {
 			h.TTL = ttl
 
 		case "fallthrough":
-			// fallthrough is implicit — queries that don't match go to Next
+			h.Fall.SetZonesFromArgs(c.RemainingArgs())
 
 		case "source":
 			if !c.NextArg() {

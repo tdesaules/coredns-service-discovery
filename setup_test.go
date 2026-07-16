@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/plugin/test"
@@ -320,3 +321,107 @@ func (e *errorSource) Run(_ context.Context, _ *Store) error {
 }
 
 var _ = test.ResponseWriter{}
+
+func TestStartSources_LaunchesAndStops(t *testing.T) {
+	RegisterSource("mock", func() Source { return &mockSource{} })
+	defer func() { sourceRegistryMu.Lock(); delete(sourceRegistry, "mock"); sourceRegistryMu.Unlock() }()
+
+	store := NewStore()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sources := []Source{&mockSource{}}
+	wg := startSources(ctx, store, sources)
+
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startSources did not stop after context cancel")
+	}
+}
+
+func TestStartSources_EmptySources(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	store := NewStore()
+	wg := startSources(ctx, store, nil)
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected immediate completion with no sources")
+	}
+}
+
+func TestStartSources_SourceErrorDoesNotBlock(t *testing.T) {
+	RegisterSource("errsrc", func() Source { return &errorSource{} })
+	defer func() { sourceRegistryMu.Lock(); delete(sourceRegistry, "errsrc"); sourceRegistryMu.Unlock() }()
+
+	store := NewStore()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sources := []Source{&errorSource{}}
+	wg := startSources(ctx, store, sources)
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("source that returns immediately should not block WaitGroup")
+	}
+
+	cancel()
+}
+
+func TestSetup_FallthroughWithZones(t *testing.T) {
+	c := testController(`
+		discovery svc.desaules.in {
+			fallthrough other.zone.
+		}
+	`)
+
+	h, _, err := parseConfig(c)
+	if err != nil {
+		t.Fatalf("parseConfig error: %v", err)
+	}
+
+	if len(h.Fall.Zones) == 0 {
+		t.Fatal("expected fallthrough zones to be set")
+	}
+}
+
+func TestSetup_FallthroughNoZones(t *testing.T) {
+	c := testController(`
+		discovery svc.desaules.in {
+			fallthrough
+		}
+	`)
+
+	h, _, err := parseConfig(c)
+	if err != nil {
+		t.Fatalf("parseConfig error: %v", err)
+	}
+
+	if !h.Fall.Through("anything.svc.desaules.in.") {
+		t.Error("expected fallthrough to match all zones when no zones specified")
+	}
+}

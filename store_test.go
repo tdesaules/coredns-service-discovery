@@ -301,3 +301,62 @@ func TestStore_GetInstance_EmptyNamespace(t *testing.T) {
 		t.Error("expected instance found with empty namespace")
 	}
 }
+
+func TestStore_Register_DoesNotMutateInput(t *testing.T) {
+	s := NewStore()
+	inst := &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}
+
+	if err := s.Register("myapp", "default", inst); err != nil {
+		t.Fatal(err)
+	}
+
+	if inst.Protocol != "" {
+		t.Errorf("input instance Protocol was mutated: got %q, want %q", inst.Protocol, "")
+	}
+	if inst.Priority != 0 {
+		t.Errorf("input instance Priority was mutated: got %d, want %d", inst.Priority, 0)
+	}
+	if inst.Weight != 0 {
+		t.Errorf("input instance Weight was mutated: got %d, want %d", inst.Weight, 0)
+	}
+}
+
+func TestStore_Register_InvalidServiceName(t *testing.T) {
+	s := NewStore()
+	for _, name := range []string{"", "a b", "a.b", "a_b", "-foo", "foo-", string(make([]byte, 64))} {
+		err := s.Register(name, "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"})
+		if err == nil {
+			t.Errorf("expected error for invalid service name %q", name)
+		}
+	}
+}
+
+func TestStore_Register_InvalidNamespace(t *testing.T) {
+	s := NewStore()
+	for _, ns := range []string{"a b", "a.b", "a_b", "-foo", "foo-"} {
+		err := s.Register("myapp", ns, &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"})
+		if err == nil {
+			t.Errorf("expected error for invalid namespace %q", ns)
+		}
+	}
+}
+
+func TestStore_Register_InvalidInstanceID(t *testing.T) {
+	s := NewStore()
+	for _, id := range []string{"a b", "a.b", "a_b", "-foo", "foo-"} {
+		err := s.Register("myapp", "default", &Instance{ID: id, Address: "10.0.0.1", Port: 8080, Source: "test"})
+		if err == nil {
+			t.Errorf("expected error for invalid instance ID %q", id)
+		}
+	}
+}
+
+func TestStore_Register_ValidNamesWithHyphens(t *testing.T) {
+	s := NewStore()
+	for _, name := range []string{"open-webui", "web-frontend-https", "a", "svc1", "my-app-2"} {
+		err := s.Register(name, "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"})
+		if err != nil {
+			t.Errorf("unexpected error for valid service name %q: %v", name, err)
+		}
+	}
+}

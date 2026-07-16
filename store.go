@@ -45,8 +45,21 @@ func serviceKey(name, namespace string) string {
 
 // Register adds or updates an instance of a service in the store.
 func (s *Store) Register(svcName, namespace string, inst *Instance) error {
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	if !isDNSLabelSafe(svcName) {
+		return fmt.Errorf("invalid service name %q: must be a valid DNS label (alphanumeric and hyphens, max 63 chars)", svcName)
+	}
+	if !isDNSLabelSafe(namespace) {
+		return fmt.Errorf("invalid namespace %q: must be a valid DNS label (alphanumeric and hyphens, max 63 chars)", namespace)
+	}
 	if inst.ID == "" {
 		return fmt.Errorf("instance ID cannot be empty")
+	}
+	if !isDNSLabelSafe(inst.ID) {
+		return fmt.Errorf("invalid instance ID %q: must be a valid DNS label (alphanumeric and hyphens, max 63 chars)", inst.ID)
 	}
 	if inst.Address == "" {
 		return fmt.Errorf("instance address cannot be empty")
@@ -54,6 +67,18 @@ func (s *Store) Register(svcName, namespace string, inst *Instance) error {
 	if inst.Port == 0 {
 		return fmt.Errorf("instance port cannot be 0")
 	}
+
+	// Copy to avoid mutating the caller's instance when applying defaults.
+	inst = &Instance{
+		ID:       inst.ID,
+		Address:  inst.Address,
+		Port:     inst.Port,
+		Protocol: inst.Protocol,
+		Priority: inst.Priority,
+		Weight:   inst.Weight,
+		Source:   inst.Source,
+	}
+
 	if inst.Protocol == "" {
 		inst.Protocol = "tcp"
 	}
@@ -62,9 +87,6 @@ func (s *Store) Register(svcName, namespace string, inst *Instance) error {
 	}
 	if inst.Weight == 0 {
 		inst.Weight = 100
-	}
-	if namespace == "" {
-		namespace = "default"
 	}
 
 	key := serviceKey(svcName, namespace)
@@ -84,6 +106,27 @@ func (s *Store) Register(svcName, namespace string, inst *Instance) error {
 
 	svc.Instances[inst.ID] = inst
 	return nil
+}
+
+// isDNSLabelSafe reports whether s is a valid DNS label:
+// 1-63 characters, alphanumeric or hyphens, not starting or ending with a hyphen.
+func isDNSLabelSafe(s string) bool {
+	if s == "" || len(s) > 63 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		isAlpha := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		isDigit := c >= '0' && c <= '9'
+		isHyphen := c == '-'
+		if !isAlpha && !isDigit && !isHyphen {
+			return false
+		}
+		if isHyphen && (i == 0 || i == len(s)-1) {
+			return false
+		}
+	}
+	return true
 }
 
 // Deregister removes an instance from a service.

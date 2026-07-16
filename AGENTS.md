@@ -45,7 +45,7 @@ A pre-push hook (`.githooks/pre-push`) validates commit format and runs gitleaks
 - `source.go` — `Source` interface + global registry. Sources self-register via `init()` → `RegisterSource()`.
 - `handler.go` — `ServeDNS`: parses query labels, serves A/SRV from store, falls through to Next on no match.
 - `setup.go` — `plugin.Register("discovery", setup)`, Corefile parsing, source lifecycle (OnStartup/OnShutdown).
-- `fallthrough` is parsed but a no-op — fallthrough is implicit (non-matching queries always go to `Next`).
+- `fallthrough` follows CoreDNS semantics via `fall.F`: when configured without zones it forwards all no-match queries to `Next`; with explicit zones only those zones fall through. Without `fallthrough`, no-match queries return NXDOMAIN. SRV queries are filtered by the `_tcp`/`_udp` protocol label.
 
 ## Adding a source
 

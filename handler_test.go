@@ -406,15 +406,162 @@ func TestHandler_SRVRecord_NonExistentService(t *testing.T) {
 
 func TestHandler_SRVRecord_InvalidTarget(t *testing.T) {
 	store := NewStore()
-	if err := store.Register("bad-srv", "default", &Instance{
+	err := store.Register("bad-srv", "default", &Instance{
 		ID: "a b", Address: "10.0.0.1", Port: 8080, Source: "test",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid instance ID with space")
+	}
+}
+
+func TestHandler_Fallthrough_NonExistentA(t *testing.T) {
+	store := NewStore()
+	populateStore(store)
+	h := setupTestHandler(store)
+	h.Fall.SetZonesFromArgs(nil)
+	h.Next = test.NextHandler(dns.RcodeSuccess, nil)
+
+	req := test.Case{
+		Qname: "nonexistent.default.svc.desaules.in.",
+		Qtype: dns.TypeA,
+	}.Msg()
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	code, _ := h.ServeDNS(context.Background(), rec, req)
+
+	if code != dns.RcodeSuccess {
+		t.Errorf("expected fallthrough to next plugin, got rcode %d", code)
+	}
+}
+
+func TestHandler_Fallthrough_NonExistentSRV(t *testing.T) {
+	store := NewStore()
+	populateStore(store)
+	h := setupTestHandler(store)
+	h.Fall.SetZonesFromArgs(nil)
+	h.Next = test.NextHandler(dns.RcodeSuccess, nil)
+
+	req := test.Case{
+		Qname: "_nonexistent._tcp.default.svc.desaules.in.",
+		Qtype: dns.TypeSRV,
+	}.Msg()
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	code, _ := h.ServeDNS(context.Background(), rec, req)
+
+	if code != dns.RcodeSuccess {
+		t.Errorf("expected fallthrough to next plugin, got rcode %d", code)
+	}
+}
+
+func TestHandler_Fallthrough_SpecificZone(t *testing.T) {
+	store := NewStore()
+	populateStore(store)
+	h := setupTestHandler(store)
+	h.Fall.SetZonesFromArgs([]string{"other.zone."})
+	h.Next = test.NextHandler(dns.RcodeSuccess, nil)
+
+	// Query in the handler's zone but not in fallthrough zones → NXDOMAIN
+	req := test.Case{
+		Qname: "nonexistent.default.svc.desaules.in.",
+		Qtype: dns.TypeA,
+	}.Msg()
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	code, _ := h.ServeDNS(context.Background(), rec, req)
+
+	if code != dns.RcodeNameError {
+		t.Errorf("expected NXDOMAIN (zone not in fallthrough), got rcode %d", code)
+	}
+}
+
+func TestHandler_NoFallthrough_NXDOMAIN(t *testing.T) {
+	store := NewStore()
+	populateStore(store)
+	h := setupTestHandler(store)
+
+	req := test.Case{
+		Qname: "nonexistent.default.svc.desaules.in.",
+		Qtype: dns.TypeA,
+	}.Msg()
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	code, _ := h.ServeDNS(context.Background(), rec, req)
+
+	if code != dns.RcodeNameError {
+		t.Errorf("expected NXDOMAIN without fallthrough, got rcode %d", code)
+	}
+}
+
+func TestHandler_SRVRecord_ProtocolFilter(t *testing.T) {
+	store := NewStore()
+	if err := store.Register("multi", "default", &Instance{
+		ID: "tcp1", Address: "10.0.0.1", Port: 8080, Protocol: "tcp", Source: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Register("multi", "default", &Instance{
+		ID: "udp1", Address: "10.0.0.2", Port: 9090, Protocol: "udp", Source: "test",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	h := setupTestHandler(store)
 
+	// TCP query should only return the TCP instance
 	req := test.Case{
-		Qname: "_bad-srv._tcp.default.svc.desaules.in.",
+		Qname: "_multi._tcp.default.svc.desaules.in.",
+		Qtype: dns.TypeSRV,
+	}.Msg()
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	_, err := h.ServeDNS(context.Background(), rec, req)
+	if err != nil {
+		t.Fatalf("ServeDNS returned error: %v", err)
+	}
+
+	if len(rec.Msg.Answer) != 1 {
+		t.Fatalf("expected 1 SRV record for tcp, got %d", len(rec.Msg.Answer))
+	}
+
+	srv := rec.Msg.Answer[0].(*dns.SRV)
+	if srv.Port != 8080 {
+		t.Errorf("expected port 8080 for tcp instance, got %d", srv.Port)
+	}
+
+	// UDP query should only return the UDP instance
+	req = test.Case{
+		Qname: "_multi._udp.default.svc.desaules.in.",
+		Qtype: dns.TypeSRV,
+	}.Msg()
+
+	rec = dnstest.NewRecorder(&test.ResponseWriter{})
+	_, err = h.ServeDNS(context.Background(), rec, req)
+	if err != nil {
+		t.Fatalf("ServeDNS returned error: %v", err)
+	}
+
+	if len(rec.Msg.Answer) != 1 {
+		t.Fatalf("expected 1 SRV record for udp, got %d", len(rec.Msg.Answer))
+	}
+
+	srv = rec.Msg.Answer[0].(*dns.SRV)
+	if srv.Port != 9090 {
+		t.Errorf("expected port 9090 for udp instance, got %d", srv.Port)
+	}
+}
+
+func TestHandler_SRVRecord_NoMatchingProtocol(t *testing.T) {
+	store := NewStore()
+	if err := store.Register("svc", "default", &Instance{
+		ID: "tcp1", Address: "10.0.0.1", Port: 8080, Protocol: "tcp", Source: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := setupTestHandler(store)
+
+	// Query for UDP but only TCP instance exists
+	req := test.Case{
+		Qname: "_svc._udp.default.svc.desaules.in.",
 		Qtype: dns.TypeSRV,
 	}.Msg()
 
@@ -422,6 +569,6 @@ func TestHandler_SRVRecord_InvalidTarget(t *testing.T) {
 	code, _ := h.ServeDNS(context.Background(), rec, req)
 
 	if code != dns.RcodeNameError {
-		t.Errorf("expected NXDOMAIN for invalid SRV target, got rcode %d", code)
+		t.Errorf("expected NXDOMAIN for non-matching protocol, got rcode %d", code)
 	}
 }

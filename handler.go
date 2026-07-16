@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/pkg/fall"
 	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
@@ -19,6 +20,7 @@ type Handler struct {
 	Store *Store
 	Zone  string
 	TTL   uint32
+	Fall  fall.F
 }
 
 // Name implements plugin.Handler.
@@ -52,9 +54,9 @@ func (h *Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg
 
 	switch state.QType() {
 	case dns.TypeA:
-		return h.serveA(w, r, labels, namespace)
+		return h.serveA(ctx, w, r, labels, namespace)
 	case dns.TypeSRV:
-		return h.serveSRV(w, r, labels, namespace)
+		return h.serveSRV(ctx, w, r, labels, namespace)
 	default:
 		return plugin.NextOrFailure(h.Name(), h.Next, ctx, w, r)
 	}
@@ -65,7 +67,7 @@ func (h *Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg
 //
 //	<service>.<namespace>.<zone>          → all instance IPs
 //	<instance>.<service>.<namespace>.<zone> → specific instance IP
-func (h *Handler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
+func (h *Handler) serveA(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
 	var svcName, instanceID string
 
 	if len(labels) >= 3 {
@@ -79,13 +81,13 @@ func (h *Handler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []string, name
 	if instanceID != "" {
 		inst, ok := h.Store.GetInstance(svcName, namespace, instanceID)
 		if !ok {
-			return h.nxdomain(w, r)
+			return h.handleNoMatch(ctx, w, r)
 		}
 		instances = []*Instance{inst}
 	} else {
 		instances = h.Store.GetInstances(svcName, namespace)
 		if len(instances) == 0 {
-			return h.nxdomain(w, r)
+			return h.handleNoMatch(ctx, w, r)
 		}
 	}
 
@@ -99,7 +101,7 @@ func (h *Handler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []string, name
 	}
 
 	if len(rrs) == 0 {
-		return h.nxdomain(w, r)
+		return h.handleNoMatch(ctx, w, r)
 	}
 
 	resp := new(dns.Msg)
@@ -116,25 +118,37 @@ func (h *Handler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []string, name
 // Supported pattern:
 //
 //	_<service>._<proto>.<namespace>.<zone> → SRV per instance
-func (h *Handler) serveSRV(w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
+func (h *Handler) serveSRV(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
 	if len(labels) < 3 {
-		return h.nxdomain(w, r)
+		return h.handleNoMatch(ctx, w, r)
 	}
 
 	if !strings.HasPrefix(labels[0], "_") || !strings.HasPrefix(labels[1], "_") {
-		return h.nxdomain(w, r)
+		return h.handleNoMatch(ctx, w, r)
 	}
 
 	svcName := strings.TrimPrefix(labels[0], "_")
-	// proto := strings.TrimPrefix(labels[1], "_") // "tcp" or "udp"
+	proto := strings.TrimPrefix(labels[1], "_")
 
 	instances := h.Store.GetInstances(svcName, namespace)
 	if len(instances) == 0 {
-		return h.nxdomain(w, r)
+		return h.handleNoMatch(ctx, w, r)
 	}
 
-	rrs := make([]dns.RR, 0, len(instances))
+	// Filter instances by protocol.
+	filtered := make([]*Instance, 0, len(instances))
 	for _, inst := range instances {
+		if inst.Protocol == proto {
+			filtered = append(filtered, inst)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return h.handleNoMatch(ctx, w, r)
+	}
+
+	rrs := make([]dns.RR, 0, len(filtered))
+	for _, inst := range filtered {
 		target := fmt.Sprintf("%s.%s.%s.%s", inst.ID, svcName, namespace, h.Zone)
 		rr, err := dns.NewRR(fmt.Sprintf("%s %d IN SRV %d %d %d %s",
 			r.Question[0].Name, h.TTL, inst.Priority, inst.Weight, inst.Port, target))
@@ -145,7 +159,7 @@ func (h *Handler) serveSRV(w dns.ResponseWriter, r *dns.Msg, labels []string, na
 	}
 
 	if len(rrs) == 0 {
-		return h.nxdomain(w, r)
+		return h.handleNoMatch(ctx, w, r)
 	}
 
 	resp := new(dns.Msg)
@@ -156,6 +170,16 @@ func (h *Handler) serveSRV(w dns.ResponseWriter, r *dns.Msg, labels []string, na
 		return dns.RcodeServerFailure, err
 	}
 	return dns.RcodeSuccess, nil
+}
+
+// handleNoMatch checks fallthrough before returning NXDOMAIN.
+// If fallthrough is configured for the query name, the request is
+// passed to the next plugin. Otherwise, an NXDOMAIN response is returned.
+func (h *Handler) handleNoMatch(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+	if h.Fall.Through(r.Question[0].Name) {
+		return plugin.NextOrFailure(h.Name(), h.Next, ctx, w, r)
+	}
+	return h.nxdomain(w, r)
 }
 
 // nxdomain writes an NXDOMAIN response.
