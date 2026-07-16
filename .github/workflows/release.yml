@@ -36,9 +36,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: v2.0.0
+      - run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+      - run: golangci-lint run
       - run: |
           sudo apt-get update && sudo apt-get install -y shellcheck yamllint
           npm install -g markdownlint-cli
