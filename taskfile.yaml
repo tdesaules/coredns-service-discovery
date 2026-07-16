@@ -1,0 +1,130 @@
+version: "3"
+
+includes:
+  dev-env:
+    taskfile: ./.dev-env/taskfile.qemu.yaml
+    dir: ./.dev-env
+
+tasks:
+  build:
+    desc: "Build the plugin"
+    cmds:
+      - go build ./...
+
+  test:
+    desc: "Run tests with race detector and coverage"
+    cmds:
+      - go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+  vet:
+    desc: "Run go vet"
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: "Run go mod tidy"
+    cmds:
+      - go mod tidy
+
+  lint:
+    desc: "Run golangci-lint"
+    cmds:
+      - golangci-lint run
+
+  lint-files:
+    desc: "Lint shell, YAML, JSON, and Markdown files"
+    cmds:
+      - cmd: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck .githooks/pre-push
+          else
+            echo "WARNING: shellcheck not installed, skipping"
+          fi
+      - cmd: |
+          if command -v yamllint >/dev/null 2>&1; then
+            yamllint -c .yamllint.yaml taskfile.yaml .github/workflows/*.yml
+          else
+            echo "WARNING: yamllint not installed, skipping"
+          fi
+      - cmd: |
+          if command -v jq >/dev/null 2>&1; then
+            jq empty .releaserc.json
+          else
+            echo "WARNING: jq not installed, skipping"
+          fi
+      - cmd: |
+          if command -v markdownlint >/dev/null 2>&1; then
+            markdownlint --config .markdownlint.json README.md AGENTS.md
+          else
+            echo "WARNING: markdownlint not installed, skipping"
+          fi
+
+  coverage:
+    desc: "Run tests and open HTML coverage report"
+    cmds:
+      - go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - go tool cover -html=coverage.out
+
+  clean:
+    desc: "Remove build artifacts"
+    cmds:
+      - rm -f coverage.out
+
+  setup-hooks:
+    desc: "Configure git to use .githooks directory"
+    cmds:
+      - git config core.hooksPath .githooks
+
+  security:
+    desc: "Run gosec and govulncheck"
+    cmds:
+      - gosec -tests=false ./...
+      - govulncheck ./...
+
+  secrets:
+    desc: "Run gitleaks secret scan"
+    cmds:
+      - gitleaks detect --source . --no-banner
+
+  git-sub-module:
+    desc: "Update the .dev-env submodule to the latest remote commit"
+    cmds:
+      - cmd: |
+          OLD=$(git submodule status .dev-env | awk '{print $1}')
+          git submodule update --remote .dev-env
+          NEW=$(git submodule status .dev-env | awk '{print $1}')
+          if [ "$OLD" = "$NEW" ]; then
+            echo "Submodule .dev-env is already up to date."
+            exit 0
+          fi
+          SHORT_OLD=$(echo "$OLD" | tr -d '+-' | cut -c1-7)
+          SHORT_NEW=$(echo "$NEW" | tr -d '+-' | cut -c1-7)
+          git add .dev-env
+          git commit -m "chore(deps): bump .dev-env from ${SHORT_OLD} to ${SHORT_NEW}"
+          echo "Submodule updated: ${SHORT_OLD} -> ${SHORT_NEW}"
+          echo "Run 'git push' to publish."
+
+  zen:
+    desc: "Start the dev environment VM and open Zed remotely in the workspace folder"
+    preconditions:
+      - sh: command -v zed
+        msg: "zed binary not found in PATH"
+    cmds:
+      - cmd: task dev-env:up attach=false
+      - cmd: |
+          VM_UUID=$(task dev-env:status | jq -r '.id')
+          VM_USER=$(whoami)
+          VM_HOST="${VM_UUID}.local"
+          ssh-keygen -R "${VM_HOST}" 2>/dev/null || true
+          ssh-keyscan -H -t ed25519,rsa "${VM_HOST}" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "Opening Zed at ssh://${VM_USER}@${VM_HOST}:~/workspace"
+          zed "ssh://${VM_USER}@${VM_HOST}:~/workspace"
+
+  opencode:
+    desc: "Launch opencode TUI inside the QEMU VM"
+    cmds:
+      - cmd: task dev-env:up attach=false
+      - cmd: |
+          VM_UUID=$(task dev-env:status | jq -r '.id')
+          VM_USER=$(whoami)
+          ssh -t -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${VM_USER}@${VM_UUID}.local "bash -lic 'cd ~/workspace && opencode'"

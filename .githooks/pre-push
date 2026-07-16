@@ -1,0 +1,81 @@
+#!/bin/sh
+# Pre-push hook: validates conventional commit format and scans for secrets.
+# Install: task setup-hooks (or: git config core.hooksPath .githooks)
+
+set -e
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+'
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        range="$local_sha"
+    else
+        range="$remote_sha..$local_sha"
+    fi
+
+    for commit in $(git rev-list "$range" 2>/dev/null); do
+        msg=$(git log -1 --format=%s "$commit")
+        if ! printf '%s' "$msg" | grep -qE "$pattern"; then
+            echo ""
+            echo "ERROR: commit $commit does not follow conventional commit format:"
+            echo "  $msg"
+            echo ""
+            echo "Expected: type(scope): description"
+            echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+            echo ""
+            exit 1
+        fi
+    done
+done
+
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks detect --source . --no-banner; then
+        echo ""
+        echo "ERROR: gitleaks detected potential secrets"
+        exit 1
+    fi
+else
+    echo "WARNING: gitleaks not installed, skipping secret scan"
+fi
+
+if command -v shellcheck >/dev/null 2>&1; then
+    if ! shellcheck .githooks/pre-push; then
+        echo ""
+        echo "ERROR: shellcheck found issues in .githooks/pre-push"
+        exit 1
+    fi
+else
+    echo "WARNING: shellcheck not installed, skipping shell lint"
+fi
+
+if command -v yamllint >/dev/null 2>&1; then
+    if ! yamllint -c .yamllint.yaml taskfile.yaml .github/workflows/*.yml; then
+        echo ""
+        echo "ERROR: yamllint found issues in YAML files"
+        exit 1
+    fi
+else
+    echo "WARNING: yamllint not installed, skipping YAML lint"
+fi
+
+if command -v jq >/dev/null 2>&1; then
+    if ! jq empty .releaserc.json; then
+        echo ""
+        echo "ERROR: invalid JSON in .releaserc.json"
+        exit 1
+    fi
+else
+    echo "WARNING: jq not installed, skipping JSON lint"
+fi
+
+if command -v markdownlint >/dev/null 2>&1; then
+    if ! markdownlint --config .markdownlint.json README.md AGENTS.md; then
+        echo ""
+        echo "ERROR: markdownlint found issues in Markdown files"
+        exit 1
+    fi
+else
+    echo "WARNING: markdownlint not installed, skipping Markdown lint"
+fi

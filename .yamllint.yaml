@@ -1,0 +1,10 @@
+extends: default
+rules:
+  line-length: disable
+  document-start: disable
+  truthy: disable
+  comments:
+    require-starting-space: false
+  indentation:
+    spaces: 2
+    indent-sequences: true

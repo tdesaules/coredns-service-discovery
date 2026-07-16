@@ -1,0 +1,5 @@
+# Test coverage
+coverage.out
+
+# Task runner cache
+.task/

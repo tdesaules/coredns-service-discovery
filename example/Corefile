@@ -1,0 +1,17 @@
+svc.desaules.in {
+    discovery svc.desaules.in {
+        ttl 30
+        fallthrough
+
+        source static {
+            instance a1b2c3 open-webui 10.88.0.5 8080
+            instance d4e5f6 open-webui 10.88.0.6 8080
+            instance vm1 web-frontend 10.10.10.5 443
+        }
+    }
+    cache 30
+    loadbalance
+    errors
+    log
+    forward . /etc/resolv.conf
+}
