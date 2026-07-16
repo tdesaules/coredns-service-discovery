@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/tdesaules/coredns-service-discovery/compare/v1.0.0...v1.1.0) (2026-07-16)
+
+
+### Features
+
+* add real fallthrough support, SRV protocol filter, and store validation ([f5cc2b6](https://github.com/tdesaules/coredns-service-discovery/commit/f5cc2b60a88969a99c261929e2184a5f4976ff20))
+
 # 1.0.0 (2026-07-16)
 
 
