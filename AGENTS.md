@@ -26,6 +26,11 @@ Run a single test: `go test -race -run TestStore_Register ./...`
 
 `goimports` local-prefixes is `github.com/tdesaules/coredns-service-discovery` (`.golangci.yml`). Group local imports separately from third-party.
 
+## Git workflow
+
+- **Always commit changes locally** following conventional commits (see below). Do not leave the working tree dirty after completing a task — commit as you go.
+- **Never push.** `git push` (and any remote-syncing operation) is performed manually by the owner. This applies to this repo, submodules, and any other remote.
+
 ## Conventional commits
 
 Commits must follow [conventional commits](https://www.conventionalcommits.org/) — semantic-release uses them to auto-determine version bumps.
