@@ -20,7 +20,7 @@ task secrets       # gitleaks scan
 
 Run a single test: `go test -race -run TestStore_Register ./...`
 
-`task zen` launches the QEMU VM and opens Zed remotely. `task opencode` launches opencode TUI inside the VM. `task git-sub-module` bumps the `.dev-env` submodule.
+`task zen` launches the QEMU VM and opens Zed remotely. `task opencode` launches opencode TUI inside the VM. `task git-sub-module` bumps the `.devenv` submodule.
 
 ## Code style
 
@@ -89,28 +89,28 @@ This plugin is compiled into CoreDNS via a separate repo `github.com/tdesaules/c
 
 ## CI/Release
 
-A single GitHub Actions workflow (`.github/workflows/release.yml`) runs on push to `main` (code files only — docs, `.dev-env/`, `example/` are excluded via `paths-ignore`).
+A single GitHub Actions workflow (`.github/workflows/release.yml`) runs on push to `main` (code files only — docs, `.devenv/`, `example/` are excluded via `paths-ignore`).
 
 Quality gates (parallel): commitlint, golangci-lint, go test -race + coverage (Codecov + artifact), go build + vet, gosec + govulncheck, gitleaks, file linting (shellcheck, yamllint, jq, markdownlint).
 
 Release job (after all gates pass): semantic-release analyzes conventional commits, bumps semver version, creates git tag `vX.Y.Z`, updates `CHANGELOG.md`, creates GitHub Release. No-op if no `feat:`/`fix:` commits since last release.
 
-Go version is read from `go.mod` via `go-version-file`. Dependabot tracks the `.dev-env` gitsubmodule (daily) and GitHub Actions versions (weekly), both auto-merge. Go module bumps are not automated.
+Go version is read from `go.mod` via `go-version-file`. Dependabot tracks the `.devenv` gitsubmodule (daily) and GitHub Actions versions (weekly), both auto-merge. Go module bumps are not automated.
 
 GitHub Push Protection should be enabled manually: Settings → Code security → Push protection.
 
 ## Dev environment (QEMU VM)
 
-A disposable Fedora CoreOS VM is available via git submodule at `.dev-env/` (repo: [qemu-dev-env](https://github.com/tdesaules/qemu-dev-env)).
+A disposable Fedora CoreOS VM is available via git submodule at `.devenv/` (repo: [qemu-dev-env](https://github.com/tdesaules/qemu-dev-env)).
 
 ```bash
 # From the repo root (important: PWD determines the 9p share path)
-task -t .dev-env/taskfile.qemu.yaml check   # verify host deps
-task -t .dev-env/taskfile.qemu.yaml up       # build + launch VM
-task -t .dev-env/taskfile.qemu.yaml ssh      # SSH into VM
-task -t .dev-env/taskfile.qemu.yaml down     # destroy VM
+task -t .devenv/taskfile.qemu.yaml check   # verify host deps
+task -t .devenv/taskfile.qemu.yaml up       # build + launch VM
+task -t .devenv/taskfile.qemu.yaml ssh      # SSH into VM
+task -t .devenv/taskfile.qemu.yaml down     # destroy VM
 ```
 
-The repo root is mounted inside the VM at `~/workspace` via 9p. The VM has Go, task, golangci-lint, gitleaks, and opencode pre-installed via mise (configured in `.dev-env/config.k`, gitignored). opencode config (`opencode.json`, `tui.json`, `auth.json`) is read from the host at build time and baked into the ignition config as inline files — the VM gets its own writable copies on the local filesystem.
+The repo root is mounted inside the VM at `~/workspace` via 9p. The VM has Go, task, golangci-lint, gitleaks, and opencode pre-installed via mise (configured in `.devenv/config.k`, gitignored). opencode config (`opencode.json`, `tui.json`, `auth.json`) is read from the host at build time and baked into the ignition config as inline files — the VM gets its own writable copies on the local filesystem.
 
 `task zen` launches the QEMU VM and opens Zed remotely. `task opencode` launches opencode TUI inside the VM.

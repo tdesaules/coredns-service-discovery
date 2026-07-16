@@ -7,7 +7,7 @@ on:
       - 'README.md'
       - 'AGENTS.md'
       - 'LICENSE'
-      - '.dev-env/**'
+      - '.devenv/**'
       - 'example/**'
       - 'coverage.out'
       - 'CHANGELOG.md'

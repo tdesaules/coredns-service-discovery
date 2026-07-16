@@ -1,9 +1,9 @@
 version: "3"
 
 includes:
-  dev-env:
-    taskfile: ./.dev-env/taskfile.qemu.yaml
-    dir: ./.dev-env
+  devenv:
+    taskfile: ./.devenv/taskfile.qemu.yaml
+    dir: ./.devenv
 
 tasks:
   build:
@@ -87,20 +87,20 @@ tasks:
       - gitleaks detect --source . --no-banner
 
   git-sub-module:
-    desc: "Update the .dev-env submodule to the latest remote commit"
+    desc: "Update the .devenv submodule to the latest remote commit"
     cmds:
       - cmd: |
-          OLD=$(git submodule status .dev-env | awk '{print $1}')
-          git submodule update --remote .dev-env
-          NEW=$(git submodule status .dev-env | awk '{print $1}')
+          OLD=$(git submodule status .devenv | awk '{print $1}')
+          git submodule update --remote .devenv
+          NEW=$(git submodule status .devenv | awk '{print $1}')
           if [ "$OLD" = "$NEW" ]; then
-            echo "Submodule .dev-env is already up to date."
+            echo "Submodule .devenv is already up to date."
             exit 0
           fi
           SHORT_OLD=$(echo "$OLD" | tr -d '+-' | cut -c1-7)
           SHORT_NEW=$(echo "$NEW" | tr -d '+-' | cut -c1-7)
-          git add .dev-env
-          git commit -m "chore(deps): bump .dev-env from ${SHORT_OLD} to ${SHORT_NEW}"
+          git add .devenv
+          git commit -m "chore(deps): bump .devenv from ${SHORT_OLD} to ${SHORT_NEW}"
           echo "Submodule updated: ${SHORT_OLD} -> ${SHORT_NEW}"
           echo "Run 'git push' to publish."
 
@@ -110,9 +110,9 @@ tasks:
       - sh: command -v zed
         msg: "zed binary not found in PATH"
     cmds:
-      - cmd: task dev-env:up attach=false
+      - cmd: task devenv:up attach=false
       - cmd: |
-          VM_UUID=$(task dev-env:status | jq -r '.id')
+          VM_UUID=$(task devenv:status | jq -r '.id')
           VM_USER=$(whoami)
           VM_HOST="${VM_UUID}.local"
           ssh-keygen -R "${VM_HOST}" 2>/dev/null || true
@@ -123,8 +123,8 @@ tasks:
   opencode:
     desc: "Launch opencode TUI inside the QEMU VM"
     cmds:
-      - cmd: task dev-env:up attach=false
+      - cmd: task devenv:up attach=false
       - cmd: |
-          VM_UUID=$(task dev-env:status | jq -r '.id')
+          VM_UUID=$(task devenv:status | jq -r '.id')
           VM_USER=$(whoami)
           ssh -t -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${VM_USER}@${VM_UUID}.local "bash -lic 'cd ~/workspace && opencode'"
