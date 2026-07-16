@@ -10,8 +10,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-func setupTestHandler(store *Store) *DiscoveryHandler {
-	return &DiscoveryHandler{
+func setupTestHandler(store *Store) *Handler {
+	return &Handler{
 		Store: store,
 		Zone:  "svc.desaules.in.",
 		TTL:   30,
@@ -19,15 +19,21 @@ func setupTestHandler(store *Store) *DiscoveryHandler {
 }
 
 func populateStore(s *Store) {
-	s.Register("open-webui", "default", &Instance{
+	if err := s.Register("open-webui", "default", &Instance{
 		ID: "a1b2c3", Address: "10.88.0.5", Port: 8080, Source: "podman",
-	})
-	s.Register("open-webui", "default", &Instance{
+	}); err != nil {
+		panic(err)
+	}
+	if err := s.Register("open-webui", "default", &Instance{
 		ID: "d4e5f6", Address: "10.88.0.6", Port: 8080, Source: "podman",
-	})
-	s.Register("web-frontend-https", "default", &Instance{
+	}); err != nil {
+		panic(err)
+	}
+	if err := s.Register("web-frontend-https", "default", &Instance{
 		ID: "vm1", Address: "10.10.10.5", Port: 443, Source: "qemu",
-	})
+	}); err != nil {
+		panic(err)
+	}
 }
 
 func TestHandler_ARecord_ServiceLevel(t *testing.T) {
@@ -234,7 +240,9 @@ func TestHandler_Authoritative(t *testing.T) {
 	}.Msg()
 
 	rec := dnstest.NewRecorder(&test.ResponseWriter{})
-	h.ServeDNS(context.Background(), rec, req)
+	if _, err := h.ServeDNS(context.Background(), rec, req); err != nil {
+		t.Fatalf("ServeDNS returned error: %v", err)
+	}
 
 	if !rec.Msg.Authoritative {
 		t.Error("response should be authoritative")
@@ -253,7 +261,9 @@ func TestHandler_TTLInResponse(t *testing.T) {
 	}.Msg()
 
 	rec := dnstest.NewRecorder(&test.ResponseWriter{})
-	h.ServeDNS(context.Background(), rec, req)
+	if _, err := h.ServeDNS(context.Background(), rec, req); err != nil {
+		t.Fatalf("ServeDNS returned error: %v", err)
+	}
 
 	for _, rr := range rec.Msg.Answer {
 		if rr.Header().Ttl != 60 {
@@ -320,9 +330,11 @@ func TestHandler_ARecord_InstanceNotFound(t *testing.T) {
 
 func TestHandler_ARecord_InvalidAddress(t *testing.T) {
 	store := NewStore()
-	store.Register("bad-svc", "default", &Instance{
+	if err := store.Register("bad-svc", "default", &Instance{
 		ID: "bad1", Address: "not-an-ip", Port: 8080, Source: "test",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	h := setupTestHandler(store)
 
 	req := test.Case{
@@ -394,9 +406,11 @@ func TestHandler_SRVRecord_NonExistentService(t *testing.T) {
 
 func TestHandler_SRVRecord_InvalidTarget(t *testing.T) {
 	store := NewStore()
-	store.Register("bad-srv", "default", &Instance{
+	if err := store.Register("bad-srv", "default", &Instance{
 		ID: "a b", Address: "10.0.0.1", Port: 8080, Source: "test",
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	h := setupTestHandler(store)
 
 	req := test.Case{

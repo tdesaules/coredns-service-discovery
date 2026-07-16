@@ -53,7 +53,7 @@ func setup(c *caddy.Controller) error {
 	return nil
 }
 
-func parseConfig(c *caddy.Controller) (*DiscoveryHandler, []Source, error) {
+func parseConfig(c *caddy.Controller) (*Handler, []Source, error) {
 	c.Next()
 
 	args := c.RemainingArgs()
@@ -65,7 +65,7 @@ func parseConfig(c *caddy.Controller) (*DiscoveryHandler, []Source, error) {
 		return nil, nil, c.Err("zone is required")
 	}
 
-	h := &DiscoveryHandler{
+	h := &Handler{
 		Store: NewStore(),
 		Zone:  plugin.Name(zone).Normalize(),
 		TTL:   30,

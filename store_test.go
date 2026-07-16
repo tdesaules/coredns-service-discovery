@@ -148,7 +148,7 @@ func TestStore_Deregister(t *testing.T) {
 	}
 }
 
-func TestStore_Deregister_NonExistent(t *testing.T) {
+func TestStore_Deregister_NonExistent(_ *testing.T) {
 	s := NewStore()
 	s.Deregister("nonexistent", "default", "x1")
 }
@@ -169,9 +169,19 @@ func TestStore_GetInstances_Empty(t *testing.T) {
 
 func TestStore_ListServices(t *testing.T) {
 	s := NewStore()
-	s.Register("svc1", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "podman"})
-	s.Register("svc2", "default", &Instance{ID: "b1", Address: "10.0.0.2", Port: 9090, Source: "qemu"})
-	s.Register("svc3", "prod", &Instance{ID: "c1", Address: "10.0.0.3", Port: 443, Source: "qemu"})
+	for _, svc := range []struct {
+		name, ns, id, addr string
+		port               int
+		src                string
+	}{
+		{"svc1", "default", "a1", "10.0.0.1", 8080, "podman"},
+		{"svc2", "default", "b1", "10.0.0.2", 9090, "qemu"},
+		{"svc3", "prod", "c1", "10.0.0.3", 443, "qemu"},
+	} {
+		if err := s.Register(svc.name, svc.ns, &Instance{ID: svc.id, Address: svc.addr, Port: svc.port, Source: svc.src}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	services := s.ListServices()
 	if len(services) != 3 {
@@ -181,9 +191,18 @@ func TestStore_ListServices(t *testing.T) {
 
 func TestStore_DeregisterBySource(t *testing.T) {
 	s := NewStore()
-	s.Register("svc1", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "podman"})
-	s.Register("svc1", "default", &Instance{ID: "a2", Address: "10.0.0.2", Port: 8080, Source: "qemu"})
-	s.Register("svc2", "default", &Instance{ID: "b1", Address: "10.0.0.3", Port: 9090, Source: "podman"})
+	for _, inst := range []struct {
+		svc, ns, id, addr, src string
+		port                   int
+	}{
+		{"svc1", "default", "a1", "10.0.0.1", "podman", 8080},
+		{"svc1", "default", "a2", "10.0.0.2", "qemu", 8080},
+		{"svc2", "default", "b1", "10.0.0.3", "podman", 9090},
+	} {
+		if err := s.Register(inst.svc, inst.ns, &Instance{ID: inst.id, Address: inst.addr, Port: inst.port, Source: inst.src}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	s.DeregisterBySource("podman")
 
@@ -208,14 +227,14 @@ func TestStore_Concurrent(t *testing.T) {
 		wg.Add(2)
 		go func(i int) {
 			defer wg.Done()
-			s.Register("myapp", "default", &Instance{
+			_ = s.Register("myapp", "default", &Instance{
 				ID:      fmt.Sprintf("inst%d", i),
 				Address: fmt.Sprintf("10.0.0.%d", i),
 				Port:    8080,
 				Source:  "podman",
 			})
 		}(i)
-		go func(i int) {
+		go func(_ int) {
 			defer wg.Done()
 			s.GetInstances("myapp", "default")
 		}(i)
@@ -244,7 +263,9 @@ func TestStore_GetService_NotFound(t *testing.T) {
 
 func TestStore_GetService_EmptyNamespace(t *testing.T) {
 	s := NewStore()
-	s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"})
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := s.GetService("myapp", ""); !ok {
 		t.Error("expected service found with empty namespace")
 	}
@@ -252,7 +273,9 @@ func TestStore_GetService_EmptyNamespace(t *testing.T) {
 
 func TestStore_Deregister_EmptyNamespace(t *testing.T) {
 	s := NewStore()
-	s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"})
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	s.Deregister("myapp", "", "a1")
 	if _, ok := s.GetInstance("myapp", "default", "a1"); ok {
 		t.Error("instance should be removed")
@@ -261,7 +284,9 @@ func TestStore_Deregister_EmptyNamespace(t *testing.T) {
 
 func TestStore_GetInstances_EmptyNamespace(t *testing.T) {
 	s := NewStore()
-	s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"})
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	if len(s.GetInstances("myapp", "")) != 1 {
 		t.Error("expected 1 instance with empty namespace")
 	}
@@ -269,7 +294,9 @@ func TestStore_GetInstances_EmptyNamespace(t *testing.T) {
 
 func TestStore_GetInstance_EmptyNamespace(t *testing.T) {
 	s := NewStore()
-	s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"})
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := s.GetInstance("myapp", "", "a1"); !ok {
 		t.Error("expected instance found with empty namespace")
 	}

@@ -1,3 +1,4 @@
+// Package discovery implements a CoreDNS plugin for DNS-based service discovery.
 package discovery
 
 import (
@@ -11,9 +12,9 @@ import (
 	"github.com/miekg/dns"
 )
 
-// DiscoveryHandler implements plugin.Handler and serves DNS records
+// Handler implements plugin.Handler and serves DNS records
 // from the in-memory store.
-type DiscoveryHandler struct {
+type Handler struct {
 	Next  plugin.Handler
 	Store *Store
 	Zone  string
@@ -21,12 +22,12 @@ type DiscoveryHandler struct {
 }
 
 // Name implements plugin.Handler.
-func (h *DiscoveryHandler) Name() string { return "discovery" }
+func (h *Handler) Name() string { return "discovery" }
 
 // ServeDNS implements plugin.Handler.
 // It parses the query name, looks up the store, and returns A or SRV records.
 // If no match is found, it falls through to the next plugin.
-func (h *DiscoveryHandler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+func (h *Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	state := request.Request{W: w, Req: r}
 
 	zone := strings.ToLower(h.Zone)
@@ -64,7 +65,7 @@ func (h *DiscoveryHandler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r
 //
 //	<service>.<namespace>.<zone>          → all instance IPs
 //	<instance>.<service>.<namespace>.<zone> → specific instance IP
-func (h *DiscoveryHandler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
+func (h *Handler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
 	var svcName, instanceID string
 
 	if len(labels) >= 3 {
@@ -105,7 +106,9 @@ func (h *DiscoveryHandler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []str
 	resp.SetReply(r)
 	resp.Answer = rrs
 	resp.Authoritative = true
-	w.WriteMsg(resp)
+	if err := w.WriteMsg(resp); err != nil {
+		return dns.RcodeServerFailure, err
+	}
 	return dns.RcodeSuccess, nil
 }
 
@@ -113,7 +116,7 @@ func (h *DiscoveryHandler) serveA(w dns.ResponseWriter, r *dns.Msg, labels []str
 // Supported pattern:
 //
 //	_<service>._<proto>.<namespace>.<zone> → SRV per instance
-func (h *DiscoveryHandler) serveSRV(w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
+func (h *Handler) serveSRV(w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
 	if len(labels) < 3 {
 		return h.nxdomain(w, r)
 	}
@@ -149,16 +152,20 @@ func (h *DiscoveryHandler) serveSRV(w dns.ResponseWriter, r *dns.Msg, labels []s
 	resp.SetReply(r)
 	resp.Answer = rrs
 	resp.Authoritative = true
-	w.WriteMsg(resp)
+	if err := w.WriteMsg(resp); err != nil {
+		return dns.RcodeServerFailure, err
+	}
 	return dns.RcodeSuccess, nil
 }
 
 // nxdomain writes an NXDOMAIN response.
-func (h *DiscoveryHandler) nxdomain(w dns.ResponseWriter, r *dns.Msg) (int, error) {
+func (h *Handler) nxdomain(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	resp := new(dns.Msg)
 	resp.SetReply(r)
 	resp.Rcode = dns.RcodeNameError
 	resp.Authoritative = true
-	w.WriteMsg(resp)
+	if err := w.WriteMsg(resp); err != nil {
+		return dns.RcodeServerFailure, err
+	}
 	return dns.RcodeNameError, nil
 }

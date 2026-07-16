@@ -302,7 +302,7 @@ func (m *mockSource) ParseConfig(c *caddy.Controller) error {
 	return nil
 }
 
-func (m *mockSource) Run(ctx context.Context, store *Store) error {
+func (m *mockSource) Run(ctx context.Context, _ *Store) error {
 	<-ctx.Done()
 	return nil
 }
@@ -311,11 +311,11 @@ type errorSource struct{}
 
 func (e *errorSource) Name() string { return "errsrc" }
 
-func (e *errorSource) ParseConfig(c *caddy.Controller) error {
+func (e *errorSource) ParseConfig(_ *caddy.Controller) error {
 	return fmt.Errorf("parse error")
 }
 
-func (e *errorSource) Run(ctx context.Context, store *Store) error {
+func (e *errorSource) Run(_ context.Context, _ *Store) error {
 	return nil
 }
 
