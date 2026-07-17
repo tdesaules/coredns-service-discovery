@@ -23,6 +23,10 @@ func setup(c *caddy.Controller) error {
 		return plugin.Error("discovery", err)
 	}
 
+	if len(sources) == 0 {
+		log.Warningf("no sources configured for discovery zone %q; the plugin will not serve any records", h.Zone)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg *sync.WaitGroup
 
