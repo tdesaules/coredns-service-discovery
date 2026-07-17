@@ -20,6 +20,8 @@ task secrets       # gitleaks scan
 
 Run a single test: `go test -race -run TestStore_Register ./...`
 
+Test coverage must stay above 90%.
+
 `task zen` launches the QEMU VM and opens Zed remotely. `task opencode` launches opencode TUI inside the VM. `task git-sub-module` bumps the `.devenv` submodule.
 
 ## Code style
