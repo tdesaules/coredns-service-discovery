@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"fmt"
+	"net"
 	"sync"
 )
 
@@ -64,8 +65,11 @@ func (s *Store) Register(svcName, namespace string, inst *Instance) error {
 	if inst.Address == "" {
 		return fmt.Errorf("instance address cannot be empty")
 	}
-	if inst.Port == 0 {
-		return fmt.Errorf("instance port cannot be 0")
+	if net.ParseIP(inst.Address) == nil {
+		return fmt.Errorf("invalid instance address %q: must be a valid IP address", inst.Address)
+	}
+	if inst.Port < 1 || inst.Port > 65535 {
+		return fmt.Errorf("invalid instance port %d: must be 1-65535", inst.Port)
 	}
 
 	// Copy to avoid mutating the caller's instance when applying defaults.
@@ -129,6 +133,38 @@ func isDNSLabelSafe(s string) bool {
 	return true
 }
 
+// copyInstance returns a shallow copy of an Instance.
+func copyInstance(inst *Instance) *Instance {
+	if inst == nil {
+		return nil
+	}
+	return &Instance{
+		ID:       inst.ID,
+		Address:  inst.Address,
+		Port:     inst.Port,
+		Protocol: inst.Protocol,
+		Priority: inst.Priority,
+		Weight:   inst.Weight,
+		Source:   inst.Source,
+	}
+}
+
+// copyService returns a copy of a Service with copied instances.
+func copyService(svc *Service) *Service {
+	if svc == nil {
+		return nil
+	}
+	instances := make(map[string]*Instance, len(svc.Instances))
+	for id, inst := range svc.Instances {
+		instances[id] = copyInstance(inst)
+	}
+	return &Service{
+		Name:      svc.Name,
+		Namespace: svc.Namespace,
+		Instances: instances,
+	}
+}
+
 // Deregister removes an instance from a service.
 func (s *Store) Deregister(svcName, namespace, instanceID string) {
 	if namespace == "" {
@@ -165,7 +201,7 @@ func (s *Store) GetService(svcName, namespace string) (*Service, bool) {
 	if !ok {
 		return nil, false
 	}
-	return svc, true
+	return copyService(svc), true
 }
 
 // GetInstances returns all instances of a service.
@@ -184,7 +220,7 @@ func (s *Store) GetInstances(svcName, namespace string) []*Instance {
 
 	instances := make([]*Instance, 0, len(svc.Instances))
 	for _, inst := range svc.Instances {
-		instances = append(instances, inst)
+		instances = append(instances, copyInstance(inst))
 	}
 	return instances
 }
@@ -204,7 +240,7 @@ func (s *Store) GetInstance(svcName, namespace, instanceID string) (*Instance, b
 	}
 
 	inst, ok := svc.Instances[instanceID]
-	return inst, ok
+	return copyInstance(inst), ok
 }
 
 // ListServices returns all services in the store.
@@ -214,7 +250,7 @@ func (s *Store) ListServices() []*Service {
 
 	services := make([]*Service, 0, len(s.services))
 	for _, svc := range s.services {
-		services = append(services, svc)
+		services = append(services, copyService(svc))
 	}
 	return services
 }

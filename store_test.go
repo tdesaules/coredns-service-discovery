@@ -49,6 +49,41 @@ func TestStore_Register(t *testing.T) {
 			instance:  &Instance{ID: "a1b2c3", Address: "10.0.0.1", Port: 0},
 			wantErr:   true,
 		},
+		{
+			name:      "negative port",
+			svcName:   "myapp",
+			namespace: "default",
+			instance:  &Instance{ID: "a1b2c3", Address: "10.0.0.1", Port: -1},
+			wantErr:   true,
+		},
+		{
+			name:      "port too high",
+			svcName:   "myapp",
+			namespace: "default",
+			instance:  &Instance{ID: "a1b2c3", Address: "10.0.0.1", Port: 65536},
+			wantErr:   true,
+		},
+		{
+			name:      "port at upper bound",
+			svcName:   "myapp",
+			namespace: "default",
+			instance:  &Instance{ID: "a1b2c3", Address: "10.0.0.1", Port: 65535},
+			wantErr:   false,
+		},
+		{
+			name:      "invalid address",
+			svcName:   "myapp",
+			namespace: "default",
+			instance:  &Instance{ID: "a1b2c3", Address: "not-an-ip", Port: 8080},
+			wantErr:   true,
+		},
+		{
+			name:      "ipv6 address",
+			svcName:   "myapp",
+			namespace: "default",
+			instance:  &Instance{ID: "a1b2c3", Address: "::1", Port: 8080},
+			wantErr:   false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -358,5 +393,82 @@ func TestStore_Register_ValidNamesWithHyphens(t *testing.T) {
 		if err != nil {
 			t.Errorf("unexpected error for valid service name %q: %v", name, err)
 		}
+	}
+}
+
+func TestStore_GetInstance_ReturnsCopy(t *testing.T) {
+	s := NewStore()
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := s.GetInstance("myapp", "default", "a1")
+	if !ok {
+		t.Fatal("instance not found")
+	}
+	got.Address = "10.0.0.999"
+	got.Port = 12345
+
+	got2, ok := s.GetInstance("myapp", "default", "a1")
+	if !ok {
+		t.Fatal("instance not found on second call")
+	}
+	if got2.Address != "10.0.0.1" {
+		t.Errorf("internal instance was mutated via returned pointer: Address = %q, want %q", got2.Address, "10.0.0.1")
+	}
+	if got2.Port != 8080 {
+		t.Errorf("internal instance was mutated via returned pointer: Port = %d, want %d", got2.Port, 8080)
+	}
+}
+
+func TestStore_GetInstances_ReturnsCopy(t *testing.T) {
+	s := NewStore()
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	instances := s.GetInstances("myapp", "default")
+	instances[0].Address = "10.0.0.999"
+
+	got, _ := s.GetInstance("myapp", "default", "a1")
+	if got.Address != "10.0.0.1" {
+		t.Errorf("internal instance was mutated via returned slice: Address = %q, want %q", got.Address, "10.0.0.1")
+	}
+}
+
+func TestStore_GetService_ReturnsCopy(t *testing.T) {
+	s := NewStore()
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, ok := s.GetService("myapp", "default")
+	if !ok {
+		t.Fatal("service not found")
+	}
+	svc.Instances["a1"].Address = "10.0.0.999"
+
+	got, _ := s.GetInstance("myapp", "default", "a1")
+	if got.Address != "10.0.0.1" {
+		t.Errorf("internal instance was mutated via returned service: Address = %q, want %q", got.Address, "10.0.0.1")
+	}
+}
+
+func TestStore_ListServices_ReturnsCopy(t *testing.T) {
+	s := NewStore()
+	if err := s.Register("myapp", "default", &Instance{ID: "a1", Address: "10.0.0.1", Port: 8080, Source: "test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	services := s.ListServices()
+	for _, svc := range services {
+		if svc.Name == "myapp" {
+			svc.Instances["a1"].Address = "10.0.0.999"
+		}
+	}
+
+	got, _ := s.GetInstance("myapp", "default", "a1")
+	if got.Address != "10.0.0.1" {
+		t.Errorf("internal instance was mutated via returned list: Address = %q, want %q", got.Address, "10.0.0.1")
 	}
 }
