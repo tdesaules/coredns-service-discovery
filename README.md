@@ -35,7 +35,7 @@ The plugin serves the following record types for the configured zone:
 ### A Records
 
 ```
-<service>.<namespace>.<zone>              → IPs of all instances (round-robin)
+<service>.<namespace>.<zone>              → IPs of all instances
 <instance-id>.<service>.<namespace>.<zone> → IP of a specific instance
 ```
 
