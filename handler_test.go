@@ -328,17 +328,15 @@ func TestHandler_ARecord_InstanceNotFound(t *testing.T) {
 	}
 }
 
-func TestHandler_ARecord_InvalidAddress(t *testing.T) {
+func TestHandler_ARecord_TooManyLabels(t *testing.T) {
 	store := NewStore()
-	if err := store.Register("bad-svc", "default", &Instance{
-		ID: "bad1", Address: "not-an-ip", Port: 8080, Source: "test",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	populateStore(store)
 	h := setupTestHandler(store)
+	h.Next = test.NextHandler(dns.RcodeSuccess, nil)
 
+	// 4 relative labels: extra.label.service.namespace — should fall through
 	req := test.Case{
-		Qname: "bad-svc.default.svc.desaules.in.",
+		Qname: "extra.a1b2c3.open-webui.default.svc.desaules.in.",
 		Qtype: dns.TypeA,
 	}.Msg()
 
@@ -346,7 +344,16 @@ func TestHandler_ARecord_InvalidAddress(t *testing.T) {
 	code, _ := h.ServeDNS(context.Background(), rec, req)
 
 	if code != dns.RcodeNameError {
-		t.Errorf("expected NXDOMAIN for invalid address, got rcode %d", code)
+		t.Errorf("expected NXDOMAIN for 4-label A query, got rcode %d", code)
+	}
+}
+
+func TestHandler_ARecord_InvalidAddress(t *testing.T) {
+	store := NewStore()
+	if err := store.Register("bad-svc", "default", &Instance{
+		ID: "bad1", Address: "not-an-ip", Port: 8080, Source: "test",
+	}); err == nil {
+		t.Fatal("expected error for invalid IP address")
 	}
 }
 

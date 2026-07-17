@@ -70,11 +70,14 @@ func (h *Handler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg
 func (h *Handler) serveA(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, labels []string, namespace string) (int, error) {
 	var svcName, instanceID string
 
-	if len(labels) >= 3 {
+	switch len(labels) {
+	case 3:
 		instanceID = labels[0]
 		svcName = labels[1]
-	} else {
+	case 2:
 		svcName = labels[0]
+	default:
+		return h.handleNoMatch(ctx, w, r)
 	}
 
 	var instances []*Instance
