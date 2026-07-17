@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coredns/caddy"
+	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin/test"
 )
 
@@ -423,5 +424,53 @@ func TestSetup_FallthroughNoZones(t *testing.T) {
 
 	if !h.Fall.Through("anything.svc.desaules.in.") {
 		t.Error("expected fallthrough to match all zones when no zones specified")
+	}
+}
+
+type runErrorSource struct{}
+
+func (e *runErrorSource) Name() string { return "runerr" }
+
+func (e *runErrorSource) ParseConfig(_ *caddy.Controller) error { return nil }
+
+func (e *runErrorSource) Run(_ context.Context, _ *Store) error {
+	return fmt.Errorf("simulated run error")
+}
+
+func TestStartSources_SourceRunError(t *testing.T) {
+	store := NewStore()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sources := []Source{&runErrorSource{}}
+	wg := startSources(ctx, store, sources)
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startSources did not complete after source run error")
+	}
+}
+
+func TestSetup_AddPluginClosure(t *testing.T) {
+	c := testController(`discovery svc.desaules.in { ttl 30 }`)
+	if err := setup(c); err != nil {
+		t.Fatalf("setup() error: %v", err)
+	}
+
+	config := dnsserver.GetConfig(c)
+	if len(config.Plugin) == 0 {
+		t.Fatal("expected at least one plugin registered")
+	}
+
+	handler := config.Plugin[0](nil)
+	if handler.Name() != "discovery" {
+		t.Errorf("expected plugin name 'discovery', got %q", handler.Name())
 	}
 }

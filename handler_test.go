@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
@@ -577,5 +578,70 @@ func TestHandler_SRVRecord_NoMatchingProtocol(t *testing.T) {
 
 	if code != dns.RcodeNameError {
 		t.Errorf("expected NXDOMAIN for non-matching protocol, got rcode %d", code)
+	}
+}
+
+type failingResponseWriter struct {
+	*test.ResponseWriter
+}
+
+func (f *failingResponseWriter) WriteMsg(_ *dns.Msg) error {
+	return fmt.Errorf("simulated write failure")
+}
+
+func TestHandler_ARecord_IPv6Address(t *testing.T) {
+	store := NewStore()
+	if err := store.Register("ipv6-svc", "default", &Instance{
+		ID: "a1", Address: "::1", Port: 8080, Source: "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := setupTestHandler(store)
+
+	req := test.Case{
+		Qname: "ipv6-svc.default.svc.desaules.in.",
+		Qtype: dns.TypeA,
+	}.Msg()
+
+	rec := dnstest.NewRecorder(&test.ResponseWriter{})
+	code, _ := h.ServeDNS(context.Background(), rec, req)
+
+	if code != dns.RcodeNameError {
+		t.Errorf("expected NXDOMAIN for IPv6 address in A query (dns.NewRR failure), got rcode %d", code)
+	}
+}
+
+func TestHandler_WriteMsgFailure(t *testing.T) {
+	store := NewStore()
+	populateStore(store)
+	h := setupTestHandler(store)
+
+	tests := []struct {
+		name  string
+		qname string
+		qtype uint16
+	}{
+		{"A record", "open-webui.default.svc.desaules.in.", dns.TypeA},
+		{"SRV record", "_open-webui._tcp.default.svc.desaules.in.", dns.TypeSRV},
+		{"NXDOMAIN", "nonexistent.default.svc.desaules.in.", dns.TypeA},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := test.Case{
+				Qname: tt.qname,
+				Qtype: tt.qtype,
+			}.Msg()
+
+			w := &failingResponseWriter{ResponseWriter: &test.ResponseWriter{}}
+			code, err := h.ServeDNS(context.Background(), w, req)
+
+			if code != dns.RcodeServerFailure {
+				t.Errorf("expected RcodeServerFailure, got %d", code)
+			}
+			if err == nil {
+				t.Error("expected error from WriteMsg failure")
+			}
+		})
 	}
 }

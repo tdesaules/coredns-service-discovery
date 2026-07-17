@@ -472,3 +472,12 @@ func TestStore_ListServices_ReturnsCopy(t *testing.T) {
 		t.Errorf("internal instance was mutated via returned list: Address = %q, want %q", got.Address, "10.0.0.1")
 	}
 }
+
+func TestStore_CopyHelpers_Nil(t *testing.T) {
+	if copyInstance(nil) != nil {
+		t.Error("copyInstance(nil) should return nil")
+	}
+	if copyService(nil) != nil {
+		t.Error("copyService(nil) should return nil")
+	}
+}
